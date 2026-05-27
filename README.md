@@ -1,0 +1,135 @@
+# RelayComputerUse
+
+RelayComputerUse is a small desktop automation CLI for agents. It exposes
+Windows and Linux computer-use actions as subcommands and prints machine-readable
+JSON to stdout.
+
+The binary name is `relay-computer-use`.
+
+## Commands
+
+```bash
+relay-computer-use screenshot --out screen.png
+relay-computer-use list-windows
+relay-computer-use focus-window --title "Notepad"
+relay-computer-use click --x 120 --y 240
+relay-computer-use double-click --x 120 --y 240
+relay-computer-use drag --from-x 120 --from-y 240 --to-x 360 --to-y 420 --allow-risk destructive
+relay-computer-use type-text --text "hello"
+relay-computer-use hotkey --keys "Ctrl+A"
+relay-computer-use scroll --amount -3
+relay-computer-use launch-app --name notepad --allow-risk destructive
+relay-computer-use wait-window --title "Notepad" --timeout 10s
+```
+
+Global flags must appear before the command:
+
+```bash
+relay-computer-use --runtime fake --pretty screenshot --out screen.png
+relay-computer-use --allow-risk destructive launch-app --name notepad
+```
+
+## JSON Output
+
+Successful calls return:
+
+```json
+{
+  "ok": true,
+  "action": "screenshot",
+  "message": "Captured screenshot.",
+  "observation": {
+    "path": "screen.png",
+    "mime_type": "image/png",
+    "width": 320,
+    "height": 180,
+    "windows": []
+  },
+  "data": {
+    "risk": "safe",
+    "runtime": "fake"
+  }
+}
+```
+
+Failures return `ok=false` and a normalized error:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "policy_denied",
+    "message": "action launch-app requires risk destructive; current --allow-risk is guarded",
+    "retryable": false
+  }
+}
+```
+
+Screenshots are written to files. The JSON response returns the file path,
+dimensions, mime type, and virtual screen origin when the backend can discover
+it.
+
+## Risk Policy
+
+RelayComputerUse performs policy checks but does not ask humans for approval.
+Agent runtimes should handle user approval before invoking risky commands.
+
+Risk levels:
+
+- `safe`: screenshot, list windows, wait window
+- `guarded`: focus window, click, double-click, type text, hotkey, scroll
+- `destructive`: drag, launch app
+
+The default `--allow-risk` is `guarded`. Destructive commands require
+`--allow-risk destructive`.
+
+## Runtime Selection
+
+- `--runtime auto`: use the host OS backend.
+- `--runtime fake`: use a scripted backend for CI and deterministic tests.
+
+On unsupported platforms, use `--runtime fake`.
+
+## Linux Requirements
+
+Linux requires an active graphical session with `DISPLAY` or `WAYLAND_DISPLAY`.
+
+Install these tools as appropriate:
+
+- Window discovery: `wmctrl`, or `xdotool` with `xprop`
+- Input control: `xdotool`
+- Screenshot: one of `gnome-screenshot`, `grim`, `scrot`, ImageMagick `import`,
+  or `flameshot`
+- Calculator smoke test: one of `gnome-calculator`, `kcalc`, `mate-calc`,
+  `galculator`, `xcalc`, or `gtk-launch org.gnome.Calculator`
+
+RelayComputerUse starts Linux GUI apps with `GDK_BACKEND=x11` and
+`QT_QPA_PLATFORM=xcb` when those variables are not already set.
+
+## Windows Requirements
+
+Windows requires a normal interactive desktop session. The backend uses Win32
+APIs for screenshots, window enumeration, focus, mouse input, keyboard input,
+and text input. Application launch supports common aliases such as `notepad`,
+`calc`, `calculator`, `Notepad`, and `Calculator`.
+
+## Smoke Tests
+
+Windows:
+
+```powershell
+relay-computer-use launch-app --name notepad --allow-risk destructive
+relay-computer-use wait-window --title Notepad
+relay-computer-use screenshot --out notepad.png
+relay-computer-use type-text --text "hello from RelayComputerUse"
+relay-computer-use hotkey --keys "Ctrl+A"
+```
+
+Linux:
+
+```bash
+relay-computer-use launch-app --name calculator --allow-risk destructive
+relay-computer-use wait-window --title calculator
+relay-computer-use screenshot --out calculator.png
+relay-computer-use scroll --amount -3
+```
