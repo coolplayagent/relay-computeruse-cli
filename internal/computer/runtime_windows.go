@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -30,7 +28,12 @@ const (
 	keyeventfUnicode  = 0x0004
 	mouseLeftDown     = 0x0002
 	mouseLeftUp       = 0x0004
+	mouseRightDown    = 0x0008
+	mouseRightUp      = 0x0010
+	mouseMiddleDown   = 0x0020
+	mouseMiddleUp     = 0x0040
 	mouseWheel        = 0x0800
+	mouseHWheel       = 0x01000
 	wheelDelta        = 120
 	smXVirtualScreen  = 76
 	smYVirtualScreen  = 77
@@ -55,6 +58,7 @@ var (
 	procMouseEvent                 = user32.NewProc("mouse_event")
 	procSendInput                  = user32.NewProc("SendInput")
 	procKeybdEvent                 = user32.NewProc("keybd_event")
+	procVkKeyScanW                 = user32.NewProc("VkKeyScanW")
 	procGetSystemMetrics           = user32.NewProc("GetSystemMetrics")
 	procGetDC                      = user32.NewProc("GetDC")
 	procReleaseDC                  = user32.NewProc("ReleaseDC")
@@ -114,23 +118,15 @@ func (windowsRuntime) Name() string {
 }
 
 func (r windowsRuntime) Screenshot(_ context.Context, out string) (Result, error) {
-	if strings.TrimSpace(out) == "" {
-		return Result{}, RuntimeError{Code: "invalid_args", Message: "--out is required"}
-	}
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil && filepath.Dir(out) != "." {
-		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
+	if err := ensureOutputPath(out); err != nil {
+		return Result{}, err
 	}
 	img, originX, originY, err := captureWindowsImage()
 	if err != nil {
 		return Result{}, err
 	}
-	file, err := os.Create(out)
-	if err != nil {
-		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
-	}
-	defer file.Close()
-	if err := png.Encode(file, img); err != nil {
-		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
+	if err := writePNG(out, img); err != nil {
+		return Result{}, err
 	}
 	return result("screenshot", "Captured Windows desktop screenshot.", Observation{
 		Path:     out,
@@ -139,6 +135,26 @@ func (r windowsRuntime) Screenshot(_ context.Context, out string) (Result, error
 		Height:   img.Bounds().Dy(),
 		OriginX:  originX,
 		OriginY:  originY,
+	}, map[string]interface{}{"virtual_screen_origin_x": originX, "virtual_screen_origin_y": originY}), nil
+}
+
+func (r windowsRuntime) Zoom(_ context.Context, out string, x1 int, y1 int, x2 int, y2 int) (Result, error) {
+	if err := ensureOutputPath(out); err != nil {
+		return Result{}, err
+	}
+	img, originX, originY, err := captureWindowsImage()
+	if err != nil {
+		return Result{}, err
+	}
+	cropped, err := cropImage(img, x1, y1, x2, y2)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := writePNG(out, cropped); err != nil {
+		return Result{}, err
+	}
+	return result("zoom", "Captured Windows desktop zoom region.", Observation{
+		Path: out, MimeType: "image/png", Width: cropped.Bounds().Dx(), Height: cropped.Bounds().Dy(), OriginX: originX + x1, OriginY: originY + y1,
 	}, map[string]interface{}{"virtual_screen_origin_x": originX, "virtual_screen_origin_y": originY}), nil
 }
 
@@ -165,14 +181,42 @@ func (r windowsRuntime) FocusWindow(_ context.Context, title string) (Result, er
 	return r.ListWindows(context.Background())
 }
 
+func (r windowsRuntime) MouseMove(_ context.Context, x int, y int) (Result, error) {
+	tx, ty := translateCoordinates(x, y)
+	if err := setCursor(tx, ty); err != nil {
+		return Result{}, err
+	}
+	return r.actionResult("mouse-move", "Moved Windows desktop pointer.", map[string]interface{}{"x": x, "y": y})
+}
+
 func (r windowsRuntime) Click(_ context.Context, x int, y int) (Result, error) {
 	tx, ty := translateCoordinates(x, y)
 	if err := setCursor(tx, ty); err != nil {
 		return Result{}, err
 	}
-	mouseClick(1)
+	mouseClick(mouseLeftDown, mouseLeftUp, 1)
 	time.Sleep(50 * time.Millisecond)
 	return r.actionResult("click", "Clicked Windows desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r windowsRuntime) RightClick(_ context.Context, x int, y int) (Result, error) {
+	tx, ty := translateCoordinates(x, y)
+	if err := setCursor(tx, ty); err != nil {
+		return Result{}, err
+	}
+	mouseClick(mouseRightDown, mouseRightUp, 1)
+	time.Sleep(50 * time.Millisecond)
+	return r.actionResult("right-click", "Right-clicked Windows desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r windowsRuntime) MiddleClick(_ context.Context, x int, y int) (Result, error) {
+	tx, ty := translateCoordinates(x, y)
+	if err := setCursor(tx, ty); err != nil {
+		return Result{}, err
+	}
+	mouseClick(mouseMiddleDown, mouseMiddleUp, 1)
+	time.Sleep(50 * time.Millisecond)
+	return r.actionResult("middle-click", "Middle-clicked Windows desktop coordinates.", map[string]interface{}{"x": x, "y": y})
 }
 
 func (r windowsRuntime) DoubleClick(_ context.Context, x int, y int) (Result, error) {
@@ -180,9 +224,37 @@ func (r windowsRuntime) DoubleClick(_ context.Context, x int, y int) (Result, er
 	if err := setCursor(tx, ty); err != nil {
 		return Result{}, err
 	}
-	mouseClick(2)
+	mouseClick(mouseLeftDown, mouseLeftUp, 2)
 	time.Sleep(50 * time.Millisecond)
 	return r.actionResult("double-click", "Double-clicked Windows desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r windowsRuntime) TripleClick(_ context.Context, x int, y int) (Result, error) {
+	tx, ty := translateCoordinates(x, y)
+	if err := setCursor(tx, ty); err != nil {
+		return Result{}, err
+	}
+	mouseClick(mouseLeftDown, mouseLeftUp, 3)
+	time.Sleep(50 * time.Millisecond)
+	return r.actionResult("triple-click", "Triple-clicked Windows desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r windowsRuntime) LeftMouseDown(_ context.Context, x int, y int) (Result, error) {
+	tx, ty := translateCoordinates(x, y)
+	if err := setCursor(tx, ty); err != nil {
+		return Result{}, err
+	}
+	sendMouse(mouseLeftDown, 0)
+	return r.actionResult("left-mouse-down", "Pressed Windows desktop left mouse button.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r windowsRuntime) LeftMouseUp(_ context.Context, x int, y int) (Result, error) {
+	tx, ty := translateCoordinates(x, y)
+	if err := setCursor(tx, ty); err != nil {
+		return Result{}, err
+	}
+	sendMouse(mouseLeftUp, 0)
+	return r.actionResult("left-mouse-up", "Released Windows desktop left mouse button.", map[string]interface{}{"x": x, "y": y})
 }
 
 func (r windowsRuntime) Drag(_ context.Context, fromX int, fromY int, toX int, toY int) (Result, error) {
@@ -216,27 +288,53 @@ func (r windowsRuntime) Hotkey(_ context.Context, keys string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	pressWindowsShortcut(modifiers, normals)
+	return r.actionResult("hotkey", "Sent Windows desktop shortcut.", map[string]interface{}{"keys": keys})
+}
+
+func (r windowsRuntime) HoldKey(_ context.Context, keys string, duration time.Duration) (Result, error) {
+	modifiers, normals, err := normalizeWindowsKeys(keys, false)
+	if err != nil {
+		return Result{}, err
+	}
 	for _, key := range modifiers {
 		keybdEvent(key, 0)
 	}
 	for _, key := range normals {
 		keybdEvent(key, 0)
 	}
+	time.Sleep(duration)
 	for i := len(normals) - 1; i >= 0; i-- {
 		keybdEvent(normals[i], keyeventfKeyUp)
 	}
 	for i := len(modifiers) - 1; i >= 0; i-- {
 		keybdEvent(modifiers[i], keyeventfKeyUp)
 	}
-	return r.actionResult("hotkey", "Sent Windows desktop shortcut.", map[string]interface{}{"keys": keys})
+	return r.actionResult("hold-key", "Held Windows desktop key.", map[string]interface{}{"keys": keys, "duration_ms": duration.Milliseconds()})
 }
 
-func (r windowsRuntime) Scroll(_ context.Context, amount int) (Result, error) {
+func (r windowsRuntime) Scroll(_ context.Context, direction string, amount int) (Result, error) {
 	if amount == 0 {
 		return Result{}, RuntimeError{Code: "invalid_args", Message: "--amount must not be zero"}
 	}
-	sendMouse(mouseWheel, amount*wheelDelta)
-	return r.actionResult("scroll", "Scrolled Windows desktop view.", map[string]interface{}{"amount": amount})
+	direction, delta, horizontal, err := normalizeScroll(direction, amount)
+	if err != nil {
+		return Result{}, err
+	}
+	if horizontal {
+		sendMouse(mouseHWheel, delta*wheelDelta)
+	} else {
+		sendMouse(mouseWheel, delta*wheelDelta)
+	}
+	return r.actionResult("scroll", "Scrolled Windows desktop view.", map[string]interface{}{"amount": amount, "direction": direction})
+}
+
+func (r windowsRuntime) Wait(_ context.Context, duration time.Duration) (Result, error) {
+	if duration <= 0 {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--duration must be positive"}
+	}
+	time.Sleep(duration)
+	return r.actionResult("wait", "Waited Windows desktop duration.", map[string]interface{}{"duration_ms": duration.Milliseconds()})
 }
 
 func (r windowsRuntime) LaunchApp(ctx context.Context, name string) (Result, error) {
@@ -468,10 +566,10 @@ func setCursor(x int, y int) error {
 	return nil
 }
 
-func mouseClick(repeat int) {
+func mouseClick(down int, up int, repeat int) {
 	for i := 0; i < repeat; i++ {
-		sendMouse(mouseLeftDown, 0)
-		sendMouse(mouseLeftUp, 0)
+		sendMouse(down, 0)
+		sendMouse(up, 0)
 		if i+1 < repeat {
 			time.Sleep(50 * time.Millisecond)
 		}
@@ -483,19 +581,59 @@ func sendMouse(flags int, data int) {
 }
 
 func sendUnicodeText(text string) error {
-	var inputs []input
-	for _, code := range utf16.Encode([]rune(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"))) {
-		if code == '\n' {
+	for _, ch := range strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n") {
+		if ch == '\n' {
 			keybdEvent(0x0D, 0)
 			keybdEvent(0x0D, keyeventfKeyUp)
 			continue
 		}
+		if sendMappedRune(ch) {
+			continue
+		}
+		if err := sendUnicodeRune(ch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sendMappedRune(ch rune) bool {
+	if ch > 0xffff {
+		return false
+	}
+	value, _, _ := procVkKeyScanW.Call(uintptr(ch))
+	if int16(value&0xffff) == -1 {
+		return false
+	}
+	vk := uint16(value & 0xff)
+	shiftState := byte((value >> 8) & 0xff)
+	var modifiers []uint16
+	if shiftState&1 != 0 {
+		modifiers = append(modifiers, 0x10)
+	}
+	if shiftState&2 != 0 {
+		modifiers = append(modifiers, 0x11)
+	}
+	if shiftState&4 != 0 {
+		modifiers = append(modifiers, 0x12)
+	}
+	for _, key := range modifiers {
+		keybdEvent(key, 0)
+	}
+	keybdEvent(vk, 0)
+	keybdEvent(vk, keyeventfKeyUp)
+	for i := len(modifiers) - 1; i >= 0; i-- {
+		keybdEvent(modifiers[i], keyeventfKeyUp)
+	}
+	return true
+}
+
+func sendUnicodeRune(ch rune) error {
+	var inputs []input
+	for _, code := range utf16.Encode([]rune{ch}) {
 		down := keyboardInput{WScan: code, DwFlags: keyeventfUnicode}
 		up := keyboardInput{WScan: code, DwFlags: keyeventfUnicode | keyeventfKeyUp}
 		inputs = append(inputs, keyboardInputEvent(down), keyboardInputEvent(up))
-	}
-	if len(inputs) == 0 {
-		return nil
 	}
 	sent, _, _ := procSendInput.Call(uintptr(len(inputs)), uintptr(unsafe.Pointer(&inputs[0])), unsafe.Sizeof(input{}))
 	if sent != uintptr(len(inputs)) {
@@ -514,7 +652,26 @@ func keybdEvent(vk uint16, flags uint32) {
 	procKeybdEvent.Call(uintptr(vk), 0, uintptr(flags), 0)
 }
 
+func pressWindowsShortcut(modifiers []uint16, normals []uint16) {
+	for _, key := range modifiers {
+		keybdEvent(key, 0)
+	}
+	for _, key := range normals {
+		keybdEvent(key, 0)
+	}
+	for i := len(normals) - 1; i >= 0; i-- {
+		keybdEvent(normals[i], keyeventfKeyUp)
+	}
+	for i := len(modifiers) - 1; i >= 0; i-- {
+		keybdEvent(modifiers[i], keyeventfKeyUp)
+	}
+}
+
 func normalizeWindowsShortcut(keys string) ([]uint16, []uint16, error) {
+	return normalizeWindowsKeys(keys, true)
+}
+
+func normalizeWindowsKeys(keys string, requireNormal bool) ([]uint16, []uint16, error) {
 	if strings.TrimSpace(keys) == "" {
 		return nil, nil, RuntimeError{Code: "invalid_args", Message: "--keys is required"}
 	}
@@ -552,8 +709,11 @@ func normalizeWindowsShortcut(keys string) ([]uint16, []uint16, error) {
 		}
 		return nil, nil, RuntimeError{Code: "invalid_args", Message: "unsupported shortcut key: " + token}
 	}
-	if len(normals) == 0 {
+	if requireNormal && len(normals) == 0 {
 		return nil, nil, RuntimeError{Code: "invalid_args", Message: "--keys must include a non-modifier key"}
+	}
+	if len(modifiers) == 0 && len(normals) == 0 {
+		return nil, nil, RuntimeError{Code: "invalid_args", Message: "--keys is required"}
 	}
 	return modifiers, normals, nil
 }

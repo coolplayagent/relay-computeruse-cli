@@ -145,17 +145,40 @@ func parseGlobal(args []string) (options, string, []string, error) {
 
 func commands() map[string]commandSpec {
 	return map[string]commandSpec{
-		"screenshot":   {Name: "screenshot", Risk: computer.RiskSafe, Run: runScreenshot},
-		"list-windows": {Name: "list-windows", Risk: computer.RiskSafe, Run: runListWindows},
-		"focus-window": {Name: "focus-window", Risk: computer.RiskGuarded, Run: runFocusWindow},
-		"click":        {Name: "click", Risk: computer.RiskGuarded, Run: runClick},
-		"double-click": {Name: "double-click", Risk: computer.RiskGuarded, Run: runDoubleClick},
-		"drag":         {Name: "drag", Risk: computer.RiskDestructive, Run: runDrag},
-		"type-text":    {Name: "type-text", Risk: computer.RiskGuarded, Run: runTypeText},
-		"hotkey":       {Name: "hotkey", Risk: computer.RiskGuarded, Run: runHotkey},
-		"scroll":       {Name: "scroll", Risk: computer.RiskGuarded, Run: runScroll},
-		"launch-app":   {Name: "launch-app", Risk: computer.RiskDestructive, Run: runLaunchApp},
-		"wait-window":  {Name: "wait-window", Risk: computer.RiskSafe, Run: runWaitWindow},
+		"screenshot":      {Name: "screenshot", Risk: computer.RiskSafe, Run: runScreenshot},
+		"zoom":            {Name: "zoom", Risk: computer.RiskSafe, Run: runZoom},
+		"list-windows":    {Name: "list-windows", Risk: computer.RiskSafe, Run: runListWindows},
+		"focus-window":    {Name: "focus-window", Risk: computer.RiskGuarded, Run: runFocusWindow},
+		"mouse-move":      {Name: "mouse-move", Risk: computer.RiskGuarded, Run: runMouseMove},
+		"mouse_move":      {Name: "mouse-move", Risk: computer.RiskGuarded, Run: runMouseMove},
+		"click":           {Name: "click", Risk: computer.RiskGuarded, Run: runClick},
+		"left-click":      {Name: "click", Risk: computer.RiskGuarded, Run: runClick},
+		"left_click":      {Name: "click", Risk: computer.RiskGuarded, Run: runClick},
+		"right-click":     {Name: "right-click", Risk: computer.RiskGuarded, Run: runRightClick},
+		"right_click":     {Name: "right-click", Risk: computer.RiskGuarded, Run: runRightClick},
+		"middle-click":    {Name: "middle-click", Risk: computer.RiskGuarded, Run: runMiddleClick},
+		"middle_click":    {Name: "middle-click", Risk: computer.RiskGuarded, Run: runMiddleClick},
+		"double-click":    {Name: "double-click", Risk: computer.RiskGuarded, Run: runDoubleClick},
+		"double_click":    {Name: "double-click", Risk: computer.RiskGuarded, Run: runDoubleClick},
+		"triple-click":    {Name: "triple-click", Risk: computer.RiskGuarded, Run: runTripleClick},
+		"triple_click":    {Name: "triple-click", Risk: computer.RiskGuarded, Run: runTripleClick},
+		"left-mouse-down": {Name: "left-mouse-down", Risk: computer.RiskGuarded, Run: runLeftMouseDown},
+		"left_mouse_down": {Name: "left-mouse-down", Risk: computer.RiskGuarded, Run: runLeftMouseDown},
+		"left-mouse-up":   {Name: "left-mouse-up", Risk: computer.RiskGuarded, Run: runLeftMouseUp},
+		"left_mouse_up":   {Name: "left-mouse-up", Risk: computer.RiskGuarded, Run: runLeftMouseUp},
+		"drag":            {Name: "drag", Risk: computer.RiskDestructive, Run: runDrag},
+		"left-click-drag": {Name: "drag", Risk: computer.RiskDestructive, Run: runDrag},
+		"left_click_drag": {Name: "drag", Risk: computer.RiskDestructive, Run: runDrag},
+		"type-text":       {Name: "type-text", Risk: computer.RiskGuarded, Run: runTypeText},
+		"type":            {Name: "type-text", Risk: computer.RiskGuarded, Run: runTypeText},
+		"hotkey":          {Name: "hotkey", Risk: computer.RiskGuarded, Run: runHotkey},
+		"key":             {Name: "hotkey", Risk: computer.RiskGuarded, Run: runHotkey},
+		"hold-key":        {Name: "hold-key", Risk: computer.RiskGuarded, Run: runHoldKey},
+		"hold_key":        {Name: "hold-key", Risk: computer.RiskGuarded, Run: runHoldKey},
+		"scroll":          {Name: "scroll", Risk: computer.RiskGuarded, Run: runScroll},
+		"wait":            {Name: "wait", Risk: computer.RiskSafe, Run: runWait},
+		"launch-app":      {Name: "launch-app", Risk: computer.RiskDestructive, Run: runLaunchApp},
+		"wait-window":     {Name: "wait-window", Risk: computer.RiskSafe, Run: runWaitWindow},
 	}
 }
 
@@ -166,6 +189,19 @@ func runScreenshot(ctx context.Context, runtime computer.Runtime, args []string)
 		return computer.Result{}, err
 	}
 	return runtime.Screenshot(ctx, *out)
+}
+
+func runZoom(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	fs := newCommandFlagSet("zoom")
+	out := fs.String("out", "", "output PNG path")
+	x1 := fs.Int("x1", 0, "left coordinate")
+	y1 := fs.Int("y1", 0, "top coordinate")
+	x2 := fs.Int("x2", 0, "right coordinate")
+	y2 := fs.Int("y2", 0, "bottom coordinate")
+	if err := fs.Parse(args); err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.Zoom(ctx, *out, *x1, *y1, *x2, *y2)
 }
 
 func runListWindows(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
@@ -185,24 +221,78 @@ func runFocusWindow(ctx context.Context, runtime computer.Runtime, args []string
 	return runtime.FocusWindow(ctx, *title)
 }
 
-func runClick(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
-	fs := newCommandFlagSet("click")
-	x := fs.Int("x", 0, "x coordinate")
-	y := fs.Int("y", 0, "y coordinate")
-	if err := fs.Parse(args); err != nil {
+func runMouseMove(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	x, y, err := parsePoint("mouse-move", args)
+	if err != nil {
 		return computer.Result{}, err
 	}
-	return runtime.Click(ctx, *x, *y)
+	return runtime.MouseMove(ctx, x, y)
+}
+
+func runClick(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	x, y, err := parsePoint("click", args)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.Click(ctx, x, y)
+}
+
+func runRightClick(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	x, y, err := parsePoint("right-click", args)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.RightClick(ctx, x, y)
+}
+
+func runMiddleClick(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	x, y, err := parsePoint("middle-click", args)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.MiddleClick(ctx, x, y)
 }
 
 func runDoubleClick(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
-	fs := newCommandFlagSet("double-click")
+	x, y, err := parsePoint("double-click", args)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.DoubleClick(ctx, x, y)
+}
+
+func runTripleClick(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	x, y, err := parsePoint("triple-click", args)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.TripleClick(ctx, x, y)
+}
+
+func runLeftMouseDown(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	x, y, err := parsePoint("left-mouse-down", args)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.LeftMouseDown(ctx, x, y)
+}
+
+func runLeftMouseUp(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	x, y, err := parsePoint("left-mouse-up", args)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.LeftMouseUp(ctx, x, y)
+}
+
+func parsePoint(name string, args []string) (int, int, error) {
+	fs := newCommandFlagSet(name)
 	x := fs.Int("x", 0, "x coordinate")
 	y := fs.Int("y", 0, "y coordinate")
 	if err := fs.Parse(args); err != nil {
-		return computer.Result{}, err
+		return 0, 0, err
 	}
-	return runtime.DoubleClick(ctx, *x, *y)
+	return *x, *y, nil
 }
 
 func runDrag(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
@@ -235,13 +325,41 @@ func runHotkey(ctx context.Context, runtime computer.Runtime, args []string) (co
 	return runtime.Hotkey(ctx, *keys)
 }
 
-func runScroll(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
-	fs := newCommandFlagSet("scroll")
-	amount := fs.Int("amount", 0, "signed scroll amount")
+func runHoldKey(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	fs := newCommandFlagSet("hold-key")
+	keys := fs.String("keys", "", "key or shortcut to hold")
+	durationText := fs.String("duration", "1s", "hold duration")
 	if err := fs.Parse(args); err != nil {
 		return computer.Result{}, err
 	}
-	return runtime.Scroll(ctx, *amount)
+	duration, err := parseDuration(*durationText)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.HoldKey(ctx, *keys, duration)
+}
+
+func runScroll(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	fs := newCommandFlagSet("scroll")
+	amount := fs.Int("amount", 0, "signed scroll amount")
+	direction := fs.String("direction", "", "scroll direction: up, down, left, or right")
+	if err := fs.Parse(args); err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.Scroll(ctx, *direction, *amount)
+}
+
+func runWait(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
+	fs := newCommandFlagSet("wait")
+	durationText := fs.String("duration", "1s", "wait duration")
+	if err := fs.Parse(args); err != nil {
+		return computer.Result{}, err
+	}
+	duration, err := parseDuration(*durationText)
+	if err != nil {
+		return computer.Result{}, err
+	}
+	return runtime.Wait(ctx, duration)
 }
 
 func runLaunchApp(ctx context.Context, runtime computer.Runtime, args []string) (computer.Result, error) {
@@ -358,14 +476,23 @@ Usage:
 
 Commands:
   screenshot --out <path>
+  zoom --out <path> --x1 <n> --y1 <n> --x2 <n> --y2 <n>
   list-windows
   focus-window --title <text>
+  mouse-move --x <n> --y <n>
   click --x <n> --y <n>
+  right-click --x <n> --y <n>
+  middle-click --x <n> --y <n>
   double-click --x <n> --y <n>
+  triple-click --x <n> --y <n>
+  left-mouse-down --x <n> --y <n>
+  left-mouse-up --x <n> --y <n>
   drag --from-x <n> --from-y <n> --to-x <n> --to-y <n>
   type-text --text <text>
   hotkey --keys <Ctrl+A>
-  scroll --amount <n>
+  hold-key --keys <Shift> --duration <duration>
+  scroll --direction <up|down|left|right> --amount <n>
+  wait --duration <duration>
   launch-app --name <app>
   wait-window --title <text> --timeout <duration>
 `) + "\n"
