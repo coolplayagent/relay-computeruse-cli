@@ -4,9 +4,6 @@ import (
 	"context"
 	"image"
 	"image/color"
-	"image/png"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -29,12 +26,38 @@ func (r *FakeRuntime) Name() string {
 }
 
 func (r *FakeRuntime) Screenshot(_ context.Context, out string) (Result, error) {
-	if strings.TrimSpace(out) == "" {
-		return Result{}, RuntimeError{Code: "invalid_args", Message: "--out is required"}
+	if err := ensureOutputPath(out); err != nil {
+		return Result{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil && filepath.Dir(out) != "." {
-		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
+	img := fakeScreenshotImage()
+	if err := writePNG(out, img); err != nil {
+		return Result{}, err
 	}
+	return result(
+		"screenshot",
+		"Captured fake screenshot.",
+		Observation{Path: out, MimeType: "image/png", Width: img.Bounds().Dx(), Height: img.Bounds().Dy(), Windows: r.windows, FocusedWindow: r.focusedTitle()},
+		r.baseData(),
+	), nil
+}
+
+func (r *FakeRuntime) Zoom(_ context.Context, out string, x1 int, y1 int, x2 int, y2 int) (Result, error) {
+	if err := ensureOutputPath(out); err != nil {
+		return Result{}, err
+	}
+	cropped, err := cropImage(fakeScreenshotImage(), x1, y1, x2, y2)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := writePNG(out, cropped); err != nil {
+		return Result{}, err
+	}
+	return result("zoom", "Captured fake zoom region.", Observation{
+		Path: out, MimeType: "image/png", Width: cropped.Bounds().Dx(), Height: cropped.Bounds().Dy(), Windows: r.windows, FocusedWindow: r.focusedTitle(),
+	}, r.baseData()), nil
+}
+
+func fakeScreenshotImage() *image.RGBA {
 	width := 320
 	height := 180
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -61,20 +84,7 @@ func (r *FakeRuntime) Screenshot(_ context.Context, out string) (Result, error) 
 			img.SetRGBA(x, y, c)
 		}
 	}
-	file, err := os.Create(out)
-	if err != nil {
-		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
-	}
-	defer file.Close()
-	if err := png.Encode(file, img); err != nil {
-		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
-	}
-	return result(
-		"screenshot",
-		"Captured fake screenshot.",
-		Observation{Path: out, MimeType: "image/png", Width: width, Height: height, Windows: r.windows, FocusedWindow: r.focusedTitle()},
-		r.baseData(),
-	), nil
+	return img
 }
 
 func (r *FakeRuntime) ListWindows(_ context.Context) (Result, error) {
@@ -96,12 +106,36 @@ func (r *FakeRuntime) FocusWindow(_ context.Context, title string) (Result, erro
 	return r.ListWindows(context.Background())
 }
 
+func (r *FakeRuntime) MouseMove(_ context.Context, x int, y int) (Result, error) {
+	return r.pointerResult("mouse-move", "Moved fake pointer.", x, y, 0, 0, false), nil
+}
+
 func (r *FakeRuntime) Click(_ context.Context, x int, y int) (Result, error) {
 	return r.pointerResult("click", "Clicked fake coordinates.", x, y, 0, 0, false), nil
 }
 
+func (r *FakeRuntime) RightClick(_ context.Context, x int, y int) (Result, error) {
+	return r.pointerResult("right-click", "Right-clicked fake coordinates.", x, y, 0, 0, false), nil
+}
+
+func (r *FakeRuntime) MiddleClick(_ context.Context, x int, y int) (Result, error) {
+	return r.pointerResult("middle-click", "Middle-clicked fake coordinates.", x, y, 0, 0, false), nil
+}
+
 func (r *FakeRuntime) DoubleClick(_ context.Context, x int, y int) (Result, error) {
 	return r.pointerResult("double-click", "Double-clicked fake coordinates.", x, y, 0, 0, false), nil
+}
+
+func (r *FakeRuntime) TripleClick(_ context.Context, x int, y int) (Result, error) {
+	return r.pointerResult("triple-click", "Triple-clicked fake coordinates.", x, y, 0, 0, false), nil
+}
+
+func (r *FakeRuntime) LeftMouseDown(_ context.Context, x int, y int) (Result, error) {
+	return r.pointerResult("left-mouse-down", "Pressed fake left mouse button.", x, y, 0, 0, false), nil
+}
+
+func (r *FakeRuntime) LeftMouseUp(_ context.Context, x int, y int) (Result, error) {
+	return r.pointerResult("left-mouse-up", "Released fake left mouse button.", x, y, 0, 0, false), nil
 }
 
 func (r *FakeRuntime) Drag(_ context.Context, fromX int, fromY int, toX int, toY int) (Result, error) {
@@ -126,13 +160,43 @@ func (r *FakeRuntime) Hotkey(_ context.Context, keys string) (Result, error) {
 	return result("hotkey", "Sent fake hotkey.", Observation{Windows: r.windows, FocusedWindow: r.focusedTitle()}, data), nil
 }
 
-func (r *FakeRuntime) Scroll(_ context.Context, amount int) (Result, error) {
+func (r *FakeRuntime) HoldKey(_ context.Context, keys string, duration time.Duration) (Result, error) {
+	if strings.TrimSpace(keys) == "" {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--keys is required"}
+	}
+	if duration <= 0 {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--duration must be positive"}
+	}
+	data := r.baseData()
+	data["keys"] = keys
+	data["duration_ms"] = duration.Milliseconds()
+	return result("hold-key", "Held fake key.", Observation{Windows: r.windows, FocusedWindow: r.focusedTitle()}, data), nil
+}
+
+func (r *FakeRuntime) Scroll(_ context.Context, direction string, amount int) (Result, error) {
 	if amount == 0 {
 		return Result{}, RuntimeError{Code: "invalid_args", Message: "--amount must not be zero"}
 	}
+	direction = strings.ToLower(strings.TrimSpace(direction))
+	if direction == "" {
+		direction = "down"
+	}
+	if direction != "up" && direction != "down" && direction != "left" && direction != "right" {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--direction must be up, down, left, or right"}
+	}
 	data := r.baseData()
 	data["amount"] = amount
+	data["direction"] = direction
 	return result("scroll", "Scrolled fake view.", Observation{Windows: r.windows, FocusedWindow: r.focusedTitle()}, data), nil
+}
+
+func (r *FakeRuntime) Wait(_ context.Context, duration time.Duration) (Result, error) {
+	if duration <= 0 {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--duration must be positive"}
+	}
+	data := r.baseData()
+	data["duration_ms"] = duration.Milliseconds()
+	return result("wait", "Waited fake duration.", Observation{Windows: r.windows, FocusedWindow: r.focusedTitle()}, data), nil
 }
 
 func (r *FakeRuntime) LaunchApp(_ context.Context, name string) (Result, error) {

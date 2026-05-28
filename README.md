@@ -10,15 +10,24 @@ The binary name is `relay-computer-use`.
 
 ```bash
 relay-computer-use screenshot --out screen.png
+relay-computer-use zoom --out zoom.png --x1 100 --y1 100 --x2 500 --y2 400
 relay-computer-use list-windows
 relay-computer-use focus-window --title "Notepad"
+relay-computer-use mouse-move --x 120 --y 240
 relay-computer-use click --x 120 --y 240
+relay-computer-use right-click --x 120 --y 240
+relay-computer-use middle-click --x 120 --y 240
 relay-computer-use double-click --x 120 --y 240
-relay-computer-use drag --from-x 120 --from-y 240 --to-x 360 --to-y 420 --allow-risk destructive
+relay-computer-use triple-click --x 120 --y 240
+relay-computer-use left-mouse-down --x 120 --y 240
+relay-computer-use left-mouse-up --x 120 --y 240
+relay-computer-use --allow-risk destructive drag --from-x 120 --from-y 240 --to-x 360 --to-y 420
 relay-computer-use type-text --text "hello"
 relay-computer-use hotkey --keys "Ctrl+A"
-relay-computer-use scroll --amount -3
-relay-computer-use launch-app --name notepad --allow-risk destructive
+relay-computer-use hold-key --keys Shift --duration 1s
+relay-computer-use scroll --direction down --amount 3
+relay-computer-use wait --duration 1s
+relay-computer-use --allow-risk destructive launch-app --name notepad
 relay-computer-use wait-window --title "Notepad" --timeout 10s
 ```
 
@@ -76,12 +85,20 @@ Agent runtimes should handle user approval before invoking risky commands.
 
 Risk levels:
 
-- `safe`: screenshot, list windows, wait window
-- `guarded`: focus window, click, double-click, type text, hotkey, scroll
+- `safe`: screenshot, zoom, list windows, wait, wait window
+- `guarded`: focus window, mouse move, click, double-click, right-click,
+  middle-click, triple-click, mouse down/up, type text, hotkey, hold key, scroll
 - `destructive`: drag, launch app
 
 The default `--allow-risk` is `guarded`. Destructive commands require
 `--allow-risk destructive`.
+
+## Claude-style action aliases
+
+The CLI also accepts Claude Computer Use-style action names with underscores:
+`left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`,
+`mouse_move`, `left_mouse_down`, `left_mouse_up`, `left_click_drag`,
+`type`, `key`, and `hold_key`.
 
 ## Runtime Selection
 
