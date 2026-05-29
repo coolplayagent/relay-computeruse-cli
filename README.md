@@ -29,6 +29,7 @@ relay-computer-use scroll --direction down --amount 3
 relay-computer-use wait --duration 1s
 relay-computer-use --allow-risk destructive launch-app --name notepad
 relay-computer-use wait-window --title "Notepad" --timeout 10s
+echo '{"action":"screenshot","out":"screen.png"}' | relay-computer-use exec-json
 ```
 
 Global flags must appear before the command:
@@ -77,6 +78,28 @@ Failures return `ok=false` and a normalized error:
 Screenshots are written to files. The JSON response returns the file path,
 dimensions, mime type, and virtual screen origin when the backend can discover
 it.
+
+## JSON Action Protocol
+
+`exec-json` accepts a single action request from stdin, `--in <path>`, or
+`--json <request>`. It returns the same normalized JSON response as the
+subcommands.
+
+```bash
+relay-computer-use --runtime fake exec-json --json '{"action":"left_click","x":120,"y":240}'
+relay-computer-use --runtime fake exec-json --observe-out observed.png --json '{"action":"left_click","x":120,"y":240,"observe_after":true}'
+```
+
+Supported action names are `screenshot`, `zoom`, `list_windows`,
+`focus_window`, `mouse_move`, `left_click`, `right_click`, `middle_click`,
+`double_click`, `triple_click`, `left_mouse_down`, `left_mouse_up`,
+`left_click_drag`, `type`, `key`, `hold_key`, `scroll`, `wait`, `launch_app`,
+and `wait_window`. Hyphenated names and existing CLI aliases are normalized.
+
+When `observe_after` is true for an input action, the runtime captures a
+screenshot after executing the action and returns that screenshot as the
+observation. Provide `observe_out` in the request or `--observe-out` on the
+command line.
 
 ## Risk Policy
 

@@ -7,11 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/relaycomputeruse/relaycomputeruse/internal/computer"
+	"github.com/relaycomputeruse/relaycomputeruse/internal/protocol"
 )
 
 type response struct {
@@ -42,6 +44,10 @@ type commandSpec struct {
 }
 
 func Run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
+	return RunWithInput(ctx, args, os.Stdin, stdout, stderr)
+}
+
+func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	opts, commandName, commandArgs, err := parseGlobal(args)
 	if err != nil {
 		writeError(stdout, opts.Pretty, "invalid_args", err.Error(), false)
@@ -50,6 +56,9 @@ func Run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 	if commandName == "" || commandName == "help" || commandName == "--help" || commandName == "-h" {
 		_, _ = fmt.Fprint(stderr, usage())
 		return 0
+	}
+	if commandName == "exec-json" {
+		return runExecJSON(ctx, opts, commandArgs, stdin, stdout)
 	}
 
 	spec, ok := commands()[commandName]
@@ -84,6 +93,60 @@ func Run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 		Data:        result.Data,
 	})
 	return 0
+}
+
+func runExecJSON(ctx context.Context, opts options, args []string, stdin io.Reader, stdout io.Writer) int {
+	fs := newCommandFlagSet("exec-json")
+	in := fs.String("in", "", "input JSON file; defaults to stdin")
+	jsonText := fs.String("json", "", "inline JSON action request")
+	observeOut := fs.String("observe-out", "", "default screenshot path when observe_after is true")
+	if err := fs.Parse(args); err != nil {
+		writeError(stdout, opts.Pretty, "invalid_args", err.Error(), false)
+		return 2
+	}
+
+	payload, err := readJSONInput(stdin, *in, *jsonText)
+	if err != nil {
+		writeError(stdout, opts.Pretty, "invalid_args", err.Error(), false)
+		return 2
+	}
+	var request protocol.ActionRequest
+	if err := json.Unmarshal(payload, &request); err != nil {
+		writeError(stdout, opts.Pretty, "invalid_json", err.Error(), false)
+		return 2
+	}
+
+	requiredRisk := protocol.RiskForAction(request.Action)
+	if !riskAllowed(opts.AllowRisk, requiredRisk) {
+		writeError(
+			stdout,
+			opts.Pretty,
+			"policy_denied",
+			fmt.Sprintf("action %s requires risk %s; current --allow-risk is %s", request.Action, requiredRisk, opts.AllowRisk),
+			false,
+		)
+		return 3
+	}
+
+	response := protocol.Execute(ctx, computer.NewRuntime(opts.Runtime), request, protocol.Options{ObserveOutDefault: *observeOut})
+	writeJSON(stdout, opts.Pretty, response)
+	if !response.OK {
+		return 1
+	}
+	return 0
+}
+
+func readJSONInput(stdin io.Reader, in string, jsonText string) ([]byte, error) {
+	if strings.TrimSpace(jsonText) != "" && strings.TrimSpace(in) != "" {
+		return nil, fmt.Errorf("--json and --in cannot be used together")
+	}
+	if strings.TrimSpace(jsonText) != "" {
+		return []byte(jsonText), nil
+	}
+	if strings.TrimSpace(in) != "" {
+		return os.ReadFile(in)
+	}
+	return io.ReadAll(stdin)
 }
 
 func parseGlobal(args []string) (options, string, []string, error) {
@@ -458,7 +521,7 @@ func writeError(stdout io.Writer, pretty bool, code string, message string, retr
 	})
 }
 
-func writeJSON(stdout io.Writer, pretty bool, payload response) {
+func writeJSON(stdout io.Writer, pretty bool, payload any) {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(false)
 	if pretty {
@@ -495,5 +558,6 @@ Commands:
   wait --duration <duration>
   launch-app --name <app>
   wait-window --title <text> --timeout <duration>
+  exec-json [--in <path>|--json <request>] [--observe-out <path>]
 `) + "\n"
 }
