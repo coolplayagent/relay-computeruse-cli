@@ -6,9 +6,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image/png"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,14 +27,11 @@ func (linuxRuntime) Name() string {
 }
 
 func (r linuxRuntime) Screenshot(ctx context.Context, out string) (Result, error) {
-	if strings.TrimSpace(out) == "" {
-		return Result{}, RuntimeError{Code: "invalid_args", Message: "--out is required"}
-	}
 	if err := requireDisplay(); err != nil {
 		return Result{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil && filepath.Dir(out) != "." {
-		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
+	if err := ensureOutputPath(out); err != nil {
+		return Result{}, err
 	}
 	commands := screenshotCommands(out)
 	if len(commands) == 0 {
@@ -60,6 +57,44 @@ func (r linuxRuntime) Screenshot(ctx context.Context, out string) (Result, error
 		failures = append(failures, "screenshot command produced no output: "+strings.Join(command, " "))
 	}
 	return Result{}, RuntimeError{Code: "command_failed", Message: strings.Join(failures, "; "), Retryable: true}
+}
+
+func (r linuxRuntime) Zoom(ctx context.Context, out string, x1 int, y1 int, x2 int, y2 int) (Result, error) {
+	if err := requireDisplay(); err != nil {
+		return Result{}, err
+	}
+	if err := ensureOutputPath(out); err != nil {
+		return Result{}, err
+	}
+	tmp, err := os.CreateTemp("", "relay-computer-use-zoom-*.png")
+	if err != nil {
+		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer os.Remove(tmpPath)
+	if _, err := r.Screenshot(ctx, tmpPath); err != nil {
+		return Result{}, err
+	}
+	file, err := os.Open(tmpPath)
+	if err != nil {
+		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
+	}
+	img, err := png.Decode(file)
+	_ = file.Close()
+	if err != nil {
+		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
+	}
+	cropped, err := cropImage(img, x1, y1, x2, y2)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := writePNG(out, cropped); err != nil {
+		return Result{}, err
+	}
+	return result("zoom", "Captured Linux desktop zoom region.", Observation{
+		Path: out, MimeType: "image/png", Width: cropped.Bounds().Dx(), Height: cropped.Bounds().Dy(),
+	}, nil), nil
 }
 
 func (r linuxRuntime) ListWindows(ctx context.Context) (Result, error) {
@@ -91,6 +126,13 @@ func (r linuxRuntime) FocusWindow(ctx context.Context, title string) (Result, er
 	return r.ListWindows(ctx)
 }
 
+func (r linuxRuntime) MouseMove(ctx context.Context, x int, y int) (Result, error) {
+	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y)}); err != nil {
+		return Result{}, err
+	}
+	return r.pointerResult(ctx, "mouse-move", "Moved Linux desktop pointer.", map[string]interface{}{"x": x, "y": y})
+}
+
 func (r linuxRuntime) Click(ctx context.Context, x int, y int) (Result, error) {
 	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y), "click", "1"}); err != nil {
 		return Result{}, err
@@ -98,11 +140,46 @@ func (r linuxRuntime) Click(ctx context.Context, x int, y int) (Result, error) {
 	return r.pointerResult(ctx, "click", "Clicked Linux desktop coordinates.", map[string]interface{}{"x": x, "y": y})
 }
 
+func (r linuxRuntime) RightClick(ctx context.Context, x int, y int) (Result, error) {
+	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y), "click", "3"}); err != nil {
+		return Result{}, err
+	}
+	return r.pointerResult(ctx, "right-click", "Right-clicked Linux desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r linuxRuntime) MiddleClick(ctx context.Context, x int, y int) (Result, error) {
+	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y), "click", "2"}); err != nil {
+		return Result{}, err
+	}
+	return r.pointerResult(ctx, "middle-click", "Middle-clicked Linux desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
 func (r linuxRuntime) DoubleClick(ctx context.Context, x int, y int) (Result, error) {
 	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y), "click", "--repeat", "2", "1"}); err != nil {
 		return Result{}, err
 	}
 	return r.pointerResult(ctx, "double-click", "Double-clicked Linux desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r linuxRuntime) TripleClick(ctx context.Context, x int, y int) (Result, error) {
+	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y), "click", "--repeat", "3", "1"}); err != nil {
+		return Result{}, err
+	}
+	return r.pointerResult(ctx, "triple-click", "Triple-clicked Linux desktop coordinates.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r linuxRuntime) LeftMouseDown(ctx context.Context, x int, y int) (Result, error) {
+	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y), "mousedown", "1"}); err != nil {
+		return Result{}, err
+	}
+	return r.pointerResult(ctx, "left-mouse-down", "Pressed Linux desktop left mouse button.", map[string]interface{}{"x": x, "y": y})
+}
+
+func (r linuxRuntime) LeftMouseUp(ctx context.Context, x int, y int) (Result, error) {
+	if err := runInputCommand(ctx, []string{"xdotool", "mousemove", "--sync", strconv.Itoa(x), strconv.Itoa(y), "mouseup", "1"}); err != nil {
+		return Result{}, err
+	}
+	return r.pointerResult(ctx, "left-mouse-up", "Released Linux desktop left mouse button.", map[string]interface{}{"x": x, "y": y})
 }
 
 func (r linuxRuntime) Drag(ctx context.Context, fromX int, fromY int, toX int, toY int) (Result, error) {
@@ -136,13 +213,41 @@ func (r linuxRuntime) Hotkey(ctx context.Context, keys string) (Result, error) {
 	return r.pointerResult(ctx, "hotkey", "Sent Linux desktop shortcut.", map[string]interface{}{"keys": keys})
 }
 
-func (r linuxRuntime) Scroll(ctx context.Context, amount int) (Result, error) {
+func (r linuxRuntime) HoldKey(ctx context.Context, keys string, duration time.Duration) (Result, error) {
+	normalized := normalizeLinuxShortcut(keys)
+	if normalized == "" {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--keys is required"}
+	}
+	if duration <= 0 {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--duration must be positive"}
+	}
+	if err := runInputCommand(ctx, []string{"xdotool", "keydown", normalized}); err != nil {
+		return Result{}, err
+	}
+	time.Sleep(duration)
+	if err := runInputCommand(ctx, []string{"xdotool", "keyup", normalized}); err != nil {
+		return Result{}, err
+	}
+	return r.pointerResult(ctx, "hold-key", "Held Linux desktop key.", map[string]interface{}{"keys": keys, "duration_ms": duration.Milliseconds()})
+}
+
+func (r linuxRuntime) Scroll(ctx context.Context, direction string, amount int) (Result, error) {
 	if amount == 0 {
 		return Result{}, RuntimeError{Code: "invalid_args", Message: "--amount must not be zero"}
 	}
+	direction, _, horizontal, err := normalizeScroll(direction, amount)
+	if err != nil {
+		return Result{}, err
+	}
 	button := "5"
-	if amount > 0 {
+	if direction == "up" {
 		button = "4"
+	}
+	if horizontal {
+		button = "7"
+		if direction == "left" {
+			button = "6"
+		}
 	}
 	repeat := amount
 	if repeat < 0 {
@@ -151,7 +256,19 @@ func (r linuxRuntime) Scroll(ctx context.Context, amount int) (Result, error) {
 	if err := runInputCommand(ctx, []string{"xdotool", "click", "--repeat", strconv.Itoa(repeat), button}); err != nil {
 		return Result{}, err
 	}
-	return r.pointerResult(ctx, "scroll", "Scrolled Linux desktop view.", map[string]interface{}{"amount": amount})
+	return r.pointerResult(ctx, "scroll", "Scrolled Linux desktop view.", map[string]interface{}{"amount": amount, "direction": direction})
+}
+
+func (r linuxRuntime) Wait(ctx context.Context, duration time.Duration) (Result, error) {
+	if duration <= 0 {
+		return Result{}, RuntimeError{Code: "invalid_args", Message: "--duration must be positive"}
+	}
+	select {
+	case <-ctx.Done():
+		return Result{}, RuntimeError{Code: "runtime_error", Message: ctx.Err().Error(), Retryable: true}
+	case <-time.After(duration):
+	}
+	return r.pointerResult(ctx, "wait", "Waited Linux desktop duration.", map[string]interface{}{"duration_ms": duration.Milliseconds()})
 }
 
 func (r linuxRuntime) LaunchApp(ctx context.Context, name string) (Result, error) {
