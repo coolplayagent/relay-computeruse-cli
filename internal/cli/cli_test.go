@@ -9,6 +9,20 @@ import (
 	"testing"
 )
 
+func TestHelpUsesComputerUseBinaryName(t *testing.T) {
+	t.Parallel()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run(context.Background(), []string{"--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "computer-use [") {
+		t.Fatalf("help does not use computer-use binary name: %s", stderr.String())
+	}
+}
+
 func TestFakeScreenshotReturnsJSON(t *testing.T) {
 	t.Parallel()
 	out := filepath.Join(t.TempDir(), "screen.png")

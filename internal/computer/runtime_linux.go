@@ -66,7 +66,7 @@ func (r linuxRuntime) Zoom(ctx context.Context, out string, x1 int, y1 int, x2 i
 	if err := ensureOutputPath(out); err != nil {
 		return Result{}, err
 	}
-	tmp, err := os.CreateTemp("", "relay-computer-use-zoom-*.png")
+	tmp, err := os.CreateTemp("", "computer-use-zoom-*.png")
 	if err != nil {
 		return Result{}, RuntimeError{Code: "write_failed", Message: err.Error(), Retryable: true}
 	}

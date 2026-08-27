@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/relaycomputeruse/relaycomputeruse/internal/computer"
+	"github.com/coolplayagent/computer-use-cli/internal/computer"
 )
 
 type ActionRequest struct {

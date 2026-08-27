@@ -1,42 +1,42 @@
-# RelayComputerUse
+# computer-use-cli
 
-RelayComputerUse is a small desktop automation CLI for agents. It exposes
+`computer-use-cli` is a small desktop automation CLI for agents. It exposes
 Windows and Linux computer-use actions as subcommands and prints machine-readable
 JSON to stdout.
 
-The binary name is `relay-computer-use`.
+The binary name is `computer-use`.
 
 ## Commands
 
 ```bash
-relay-computer-use screenshot --out screen.png
-relay-computer-use zoom --out zoom.png --x1 100 --y1 100 --x2 500 --y2 400
-relay-computer-use list-windows
-relay-computer-use focus-window --title "Notepad"
-relay-computer-use mouse-move --x 120 --y 240
-relay-computer-use click --x 120 --y 240
-relay-computer-use right-click --x 120 --y 240
-relay-computer-use middle-click --x 120 --y 240
-relay-computer-use double-click --x 120 --y 240
-relay-computer-use triple-click --x 120 --y 240
-relay-computer-use left-mouse-down --x 120 --y 240
-relay-computer-use left-mouse-up --x 120 --y 240
-relay-computer-use --allow-risk destructive drag --from-x 120 --from-y 240 --to-x 360 --to-y 420
-relay-computer-use type-text --text "hello"
-relay-computer-use hotkey --keys "Ctrl+A"
-relay-computer-use hold-key --keys Shift --duration 1s
-relay-computer-use scroll --direction down --amount 3
-relay-computer-use wait --duration 1s
-relay-computer-use --allow-risk destructive launch-app --name notepad
-relay-computer-use wait-window --title "Notepad" --timeout 10s
-echo '{"action":"screenshot","out":"screen.png"}' | relay-computer-use exec-json
+computer-use screenshot --out screen.png
+computer-use zoom --out zoom.png --x1 100 --y1 100 --x2 500 --y2 400
+computer-use list-windows
+computer-use focus-window --title "Notepad"
+computer-use mouse-move --x 120 --y 240
+computer-use click --x 120 --y 240
+computer-use right-click --x 120 --y 240
+computer-use middle-click --x 120 --y 240
+computer-use double-click --x 120 --y 240
+computer-use triple-click --x 120 --y 240
+computer-use left-mouse-down --x 120 --y 240
+computer-use left-mouse-up --x 120 --y 240
+computer-use --allow-risk destructive drag --from-x 120 --from-y 240 --to-x 360 --to-y 420
+computer-use type-text --text "hello"
+computer-use hotkey --keys "Ctrl+A"
+computer-use hold-key --keys Shift --duration 1s
+computer-use scroll --direction down --amount 3
+computer-use wait --duration 1s
+computer-use --allow-risk destructive launch-app --name notepad
+computer-use wait-window --title "Notepad" --timeout 10s
+echo '{"action":"screenshot","out":"screen.png"}' | computer-use exec-json
 ```
 
 Global flags must appear before the command:
 
 ```bash
-relay-computer-use --runtime fake --pretty screenshot --out screen.png
-relay-computer-use --allow-risk destructive launch-app --name notepad
+computer-use --runtime fake --pretty screenshot --out screen.png
+computer-use --allow-risk destructive launch-app --name notepad
 ```
 
 ## JSON Output
@@ -86,8 +86,8 @@ it.
 subcommands.
 
 ```bash
-relay-computer-use --runtime fake exec-json --json '{"action":"left_click","x":120,"y":240}'
-relay-computer-use --runtime fake exec-json --observe-out observed.png --json '{"action":"left_click","x":120,"y":240,"observe_after":true}'
+computer-use --runtime fake exec-json --json '{"action":"left_click","x":120,"y":240}'
+computer-use --runtime fake exec-json --observe-out observed.png --json '{"action":"left_click","x":120,"y":240,"observe_after":true}'
 ```
 
 Supported action names are `screenshot`, `zoom`, `list_windows`,
@@ -103,7 +103,7 @@ command line.
 
 ## Risk Policy
 
-RelayComputerUse performs policy checks but does not ask humans for approval.
+`computer-use-cli` performs policy checks but does not ask humans for approval.
 Agent runtimes should handle user approval before invoking risky commands.
 
 Risk levels:
@@ -143,7 +143,7 @@ Install these tools as appropriate:
 - Calculator smoke test: one of `gnome-calculator`, `kcalc`, `mate-calc`,
   `galculator`, `xcalc`, or `gtk-launch org.gnome.Calculator`
 
-RelayComputerUse starts Linux GUI apps with `GDK_BACKEND=x11` and
+`computer-use-cli` starts Linux GUI apps with `GDK_BACKEND=x11` and
 `QT_QPA_PLATFORM=xcb` when those variables are not already set.
 
 ## Windows Requirements
@@ -158,18 +158,18 @@ and text input. Application launch supports common aliases such as `notepad`,
 Windows:
 
 ```powershell
-relay-computer-use launch-app --name notepad --allow-risk destructive
-relay-computer-use wait-window --title Notepad
-relay-computer-use screenshot --out notepad.png
-relay-computer-use type-text --text "hello from RelayComputerUse"
-relay-computer-use hotkey --keys "Ctrl+A"
+computer-use launch-app --name notepad --allow-risk destructive
+computer-use wait-window --title Notepad
+computer-use screenshot --out notepad.png
+computer-use type-text --text "hello from computer-use-cli"
+computer-use hotkey --keys "Ctrl+A"
 ```
 
 Linux:
 
 ```bash
-relay-computer-use launch-app --name calculator --allow-risk destructive
-relay-computer-use wait-window --title calculator
-relay-computer-use screenshot --out calculator.png
-relay-computer-use scroll --amount -3
+computer-use launch-app --name calculator --allow-risk destructive
+computer-use wait-window --title calculator
+computer-use screenshot --out calculator.png
+computer-use scroll --amount -3
 ```

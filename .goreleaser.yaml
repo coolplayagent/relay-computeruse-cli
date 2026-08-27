@@ -1,15 +1,15 @@
 version: 2
 
-project_name: relay-computer-use
+project_name: computer-use-cli
 
 before:
   hooks:
     - go test ./...
 
 builds:
-  - id: relay-computer-use
-    main: ./cmd/relay-computer-use
-    binary: relay-computer-use
+  - id: computer-use
+    main: ./cmd/computer-use
+    binary: computer-use
     env:
       - CGO_ENABLED=0
     goos:

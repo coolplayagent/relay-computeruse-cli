@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/relaycomputeruse/relaycomputeruse/internal/cli"
+	"github.com/coolplayagent/computer-use-cli/internal/cli"
 )
 
 func main() {

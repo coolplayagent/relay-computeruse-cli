@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/relaycomputeruse/relaycomputeruse/internal/computer"
-	"github.com/relaycomputeruse/relaycomputeruse/internal/protocol"
+	"github.com/coolplayagent/computer-use-cli/internal/computer"
+	"github.com/coolplayagent/computer-use-cli/internal/protocol"
 )
 
 type response struct {
@@ -151,7 +151,7 @@ func readJSONInput(stdin io.Reader, in string, jsonText string) ([]byte, error) 
 
 func parseGlobal(args []string) (options, string, []string, error) {
 	opts := options{Runtime: "auto", AllowRisk: computer.RiskGuarded}
-	fs := flag.NewFlagSet("relay-computer-use", flag.ContinueOnError)
+	fs := flag.NewFlagSet("computer-use", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&opts.Runtime, "runtime", opts.Runtime, "runtime: auto or fake")
 	allowRisk := fs.String("allow-risk", string(opts.AllowRisk), "max risk: safe, guarded, destructive")
@@ -532,10 +532,10 @@ func writeJSON(stdout io.Writer, pretty bool, payload any) {
 
 func usage() string {
 	return strings.TrimSpace(`
-RelayComputerUse
+computer-use-cli
 
 Usage:
-  relay-computer-use [--runtime auto|fake] [--allow-risk safe|guarded|destructive] [--pretty] <command> [flags]
+  computer-use [--runtime auto|fake] [--allow-risk safe|guarded|destructive] [--pretty] <command> [flags]
 
 Commands:
   screenshot --out <path>

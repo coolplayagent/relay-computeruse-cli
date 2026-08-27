@@ -1,3 +1,3 @@
-module github.com/relaycomputeruse/relaycomputeruse
+module github.com/coolplayagent/computer-use-cli
 
 go 1.22

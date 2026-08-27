@@ -15,7 +15,7 @@ type FakeRuntime struct {
 func NewFakeRuntime() *FakeRuntime {
 	return &FakeRuntime{
 		windows: []Window{
-			{ID: "window-relay", AppName: "RelayComputerUse", Title: "RelayComputerUse Demo", Focused: true},
+			{ID: "window-computer-use", AppName: "computer-use-cli", Title: "computer-use-cli Demo", Focused: true},
 			{ID: "window-browser", AppName: "Browser", Title: "Chrome DevTools", Focused: false},
 		},
 	}

@@ -19,7 +19,7 @@ func (unsupportedRuntime) Name() string { return "unsupported" }
 func (unsupportedRuntime) err() error {
 	return RuntimeError{
 		Code:      "unsupported_platform",
-		Message:   "RelayComputerUse does not support " + runtime.GOOS + "; use --runtime fake for scripted validation",
+		Message:   "computer-use-cli does not support " + runtime.GOOS + "; use --runtime fake for scripted validation",
 		Retryable: false,
 	}
 }
